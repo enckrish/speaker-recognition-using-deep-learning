@@ -1,108 +1,80 @@
-from typing import Any
+from typing import Any, List, Union
 import torch
 from torch import nn
+from torch.nn import functional as F 
+from torchvision import models
 import lightning as L
-from lightning.pytorch.utilities.types import OptimizerLRScheduler
+from lightning.pytorch.utilities.types import LRSchedulerPLType, OptimizerLRScheduler
 
 from configs import PLConfig, DSInfo
-from metrics import get_triplet_loss_batch, NaiveScorer
-from data_utils import SpeakerDataset
 
-scorer = NaiveScorer(SpeakerDataset(DSInfo.TEST_DIR))
-
-class LSTMModelConfig:
-    HIDDEN_SIZE = 64
-    NUM_LAYERS = 3
-    BIDIRECTIONAL = True
-    FRAME_AGGREGATION_MEAN = True
-
-class LSTMModel(L.LightningModule):
-    def __init__(self):
+class ResnetBBModel(L.LightningModule):
+    def __init__(self, bb_module: models.ResNet, embedding_size: int, num_classes: int):
         super().__init__()
-        self.lstm = nn.LSTM(
-            input_size=PLConfig.N_MFCC,
-            hidden_size=LSTMModelConfig.HIDDEN_SIZE,
-            num_layers=LSTMModelConfig.NUM_LAYERS,
-            batch_first=True,
-            bidirectional=LSTMModelConfig.BIDIRECTIONAL
-        )
-    
+        self.backbone = bb_module(pretrained=False)
+        self.backbone.maxpool = nn.Identity()
+        self.backbone.avgpool = nn.Identity()
+        self.backbone.fc = nn.Identity()
 
-    def _aggregate_frames(self, batch_output):
-        if LSTMModelConfig.FRAME_AGGREGATION_MEAN:
-            return torch.mean(batch_output, dim=1, keepdim=False)
-        else:
-            return batch_output[:, -1, :]
+        self.fc0 = nn.Linear(128, embedding_size)
+        self.bn0 = nn.BatchNorm1d(embedding_size)
+        self.relu = nn.ReLU()
+        self.last = nn.Linear(embedding_size, num_classes)
+
+        self.criterion = nn.CrossEntropyLoss()
+
+    def forward(self, x):
+        # x = self.backbone(x)
+        x = self.backbone.conv1(x)
+        x = self.backbone.bn1(x)
+        x = self.backbone.relu(x)
         
-    def forward(self, x):
-        D = 2 if LSTMModelConfig.BIDIRECTIONAL else 1
-        NL = LSTMModelConfig.NUM_LAYERS
-        HS = LSTMModelConfig.HIDDEN_SIZE
-        h0 = torch.zeros(D * NL, x.shape[0], HS).to('cuda') # TODO
-        c0 = torch.zeros(D * NL, x.shape[0], HS).to('cuda')
-        y, (hn, cn) = self.lstm(x, (h0, c0))
-        return self._aggregate_frames(y)
+        x = self.backbone.layer1(x)
+        x = self.backbone.layer2(x)
+        x = self.backbone.layer3(x)
+        x = self.backbone.layer4(x)
 
-    def configure_optimizers(self) -> OptimizerLRScheduler:
-        return torch.optim.Adam(self.parameters(), lr=PLConfig.LR)
+        out = F.adaptive_avg_pool2d(x,1)
+        out = torch.squeeze(out)
+
+        spk_embedding = self.fc0(out)
+        out = F.relu(self.bn0(spk_embedding)) # [batch, n_embed]
+        out = self.last(out)
+        
+        return out, spk_embedding
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.SGD(self.parameters(), lr=PLConfig.LR, weight_decay=PLConfig.WD, momentum=0.9, dampening=0)
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer,  'min', patience=2, min_lr=1e-4, verbose=1),
+                "monitor": "training_loss"
+            },
+        }
     
     def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
-        # batch shape: (3*batch_size, _, n_mfcc)
-        out = self(batch)
-        # out shape: (3*batch_size, 128[2*HIDDEN_SIZE])
-        loss = get_triplet_loss_batch(out, out.shape[0]//3)
+        data, label = batch
+        out, emb = self(data)
+        # print("Train:", out.shape, label.shape)
+        loss = self.criterion(out, label)
         self.log("training_loss", loss, prog_bar=True, on_epoch=True)
+
+        n_correct = (torch.max(out, 1)[1].long().view(label.size()) == label).sum().item()
+        n_total = data.size(0)
+        self.log("training_acc", n_correct/n_total, prog_bar=True, on_epoch=True)
+
         return loss
 
     def validation_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
-        out = self(batch)
-        loss = get_triplet_loss_batch(out, out.shape[0]//3)
+        data, label = batch
+        out, emb = self(data)
+        # print("Val:", out.shape, label.shape)
+        loss = self.criterion(out, label)
         self.log("val_loss", loss, prog_bar=True, on_epoch=True)
-        return loss
-    
-    def on_validation_epoch_end(self) -> None:
-        acc = scorer(self)
-        self.log("naive_acc", acc, prog_bar=True)
 
-class TFModelConfig:
-    TRANSFORMER_DIM = 32
-    TRANSFORMER_HEADS = 8
-    TRANSFORMER_ENCODER_LAYERS = 2
+        n_correct = (torch.max(out, 1)[1].long().view(label.size()) == label).sum().item()
+        n_total = data.size(0)
+        self.log("val_acc", n_correct/n_total, prog_bar=True, on_epoch=True)
 
-class TFModel(L.LightningModule):
-    def __init__(self):
-        super().__init__()
-        # Define the Transformer network.
-        self.linear_layer = nn.Linear(PLConfig.N_MFCC, TFModelConfig.TRANSFORMER_DIM)
-        self.encoder = nn.TransformerEncoder(nn.TransformerEncoderLayer(
-            d_model=TFModelConfig.TRANSFORMER_DIM, nhead=TFModelConfig.TRANSFORMER_HEADS,
-            batch_first=True),
-            num_layers=TFModelConfig.TRANSFORMER_ENCODER_LAYERS)
-        self.decoder = nn.TransformerDecoder(nn.TransformerDecoderLayer(
-            d_model=TFModelConfig.TRANSFORMER_DIM, nhead=TFModelConfig.TRANSFORMER_HEADS,
-            batch_first=True),
-            num_layers=1)
-
-    def forward(self, x):
-        encoder_input = torch.sigmoid(self.linear_layer(x))
-        encoder_output = self.encoder(encoder_input)
-        tgt = torch.zeros(x.shape[0], 1, TFModelConfig.TRANSFORMER_DIM).to(
-            'cuda')
-        output = self.decoder(tgt, encoder_output)
-        return output[:, 0, :]
-
-    def configure_optimizers(self) -> OptimizerLRScheduler:
-        return torch.optim.Adam(self.parameters(), lr=PLConfig.LR)
-    
-    def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
-        # batch shape: (3*batch_size, _, n_mfcc)
-        out = self(batch)
-        loss = get_triplet_loss_batch(out, out.shape[0]//3)
-        self.log("training_loss", loss, prog_bar=True, on_epoch=True)
-        return loss
-
-    def validation_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
-        out = self(batch)
-        loss = get_triplet_loss_batch(out, out.shape[0]//3)
-        self.log("val_loss", loss, prog_bar=True, on_epoch=True)
         return loss

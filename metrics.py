@@ -23,19 +23,17 @@ def get_triplet_loss_batch(batch_output: torch.Tensor, batch_size: int):
     return loss
 
 
-# class Scorer:
-#     def __init__(self, dataset: SpeakerDataset):
-#         self.dataset = dataset
+def get_triplet_loss_batch2(batch_output: torch.Tensor, batch_size: int):
+    #batch_output_reshaped.shape=[batch_size,3,128]
+    batch_output_reshaped = torch.reshape(batch_output, (batch_size, 3, batch_output.shape[1]))     
+    anchors = batch_output_reshaped[:, 0, :].squeeze(1)
+    positives = batch_output_reshaped[:, 1, :].squeeze(1)
+    negatives = batch_output_reshaped[:, 2, :].squeeze(1)
+    # return nn.TripletMarginLoss()(anchors, positives, negatives) # For distance based scoring
+    ancpos = F.cosine_similarity(anchors, positives, dim=-1)
+    ancneg = F.cosine_similarity(anchors, negatives, dim=-1)
+    return torch.log(1 + torch.exp(ancneg - ancpos)).mean()
 
-#     def get_triplet_encoding(self, encoder):
-#         triplet = self.dataset[0]
-#         encoding = encoder(triplet.unsqueeze(0))
-#         labels = [0, 1]
-#         scores = [
-#             F.cosine_similarity(encoding[0,:,:], encoding[1,:,:], dim=-1),
-#             F.cosine_similarity(encoding[1,:,:], encoding[2,:,:], dim=-1),
-#         ]
-#         return labels, scores
 
 class NaiveScorer:
     def __init__(self, dataset: SpeakerDataset, k=PLConfig.TRAIN_NUM_SPEAKERS):
@@ -53,16 +51,18 @@ class NaiveScorer:
 
     def __call__(self, encoder):
         y0,y1 = self.get_audios()
+        score = 0
         with torch.no_grad():
             e0 = encoder(y0)
             e1 = encoder(y1)
             # shapes: (k, emb_size)
             
-            score = 0
             for i in range(self.k):
-                # print(e0.shape, e1.shape)
                 sims = F.cosine_similarity(e0[i,:], e1, dim=-1)
                 if sims.argmax().item() == i:
                     score += 1
+                # sims = ((e0[i,:] - e1)**2).sum(dim=-1)
+                # if sims.argmin().item() == i:
+                #     score += 1
         return score/self.k
 

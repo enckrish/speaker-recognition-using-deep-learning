@@ -1,15 +1,18 @@
 import os
+from pathlib import Path
 
 class PLConfig:
-    TRAIN_NUM_SPEAKERS = 32
     SAMPLE_RATE = 16000
     DURATION = 3 # seconds
-    SEQ_LEN = SAMPLE_RATE * DURATION
+    SEQ_LEN = 100 # transformed feature len
+    VAL_SPLIT = 30
 
-    TRAIN_BATCH_SIZE = 8
-    TEST_BATCH_SIZE = 8
+    FEAT_PATH = Path('./feats')
+    TRAIN_BATCH_SIZE = 64
+    TEST_BATCH_SIZE = 111
     NUM_EPOCHS = 10
-    LR = 0.0001
+    LR = 0.1
+    WD = 0.0001
 
     SILENCE_TOP_DB = 40
     N_MFCC = 40

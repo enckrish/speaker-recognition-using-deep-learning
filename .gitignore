@@ -2,3 +2,4 @@ LibriSpeech/
 tb_logs/
 __pycache__/
 .venv/
+feats*/
