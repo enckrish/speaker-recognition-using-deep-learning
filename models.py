@@ -19,8 +19,10 @@ class ResnetBBModel(L.LightningModule):
         self.fc0 = nn.Linear(128, embedding_size)
         self.bn0 = nn.BatchNorm1d(embedding_size)
         self.relu = nn.ReLU()
-        self.last = nn.Linear(embedding_size, num_classes)
 
+        self.drop = nn.Dropout(0.5)
+
+        self.last = nn.Linear(embedding_size, num_classes)
         self.criterion = nn.CrossEntropyLoss()
 
     def forward(self, x):
@@ -35,10 +37,12 @@ class ResnetBBModel(L.LightningModule):
         x = self.backbone.layer4(x)
 
         out = F.adaptive_avg_pool2d(x,1)
-        out = torch.squeeze(out)
+        out = torch.squeeze(out, dim=-1)
+        out = torch.squeeze(out, dim=-1)
 
         spk_embedding = self.fc0(out)
         out = F.relu(self.bn0(spk_embedding)) # [batch, n_embed]
+        out = self.drop(out)
         out = self.last(out)
         
         return out, spk_embedding

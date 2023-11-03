@@ -74,6 +74,9 @@ TEST_LIST = get_audio_list(DSInfo.TEST_DIR)
 
 def audio_f_to_input(p: str)->torch.Tensor:
     feat = get_features(p)
+    splits = []
+    # split feat into segments of PLConfig.SEQ_LEN
+    
     feat = resize_random(feat)
     feat = feat.unsqueeze(0)
     return feat
