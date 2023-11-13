@@ -1,0 +1,7 @@
+torch
+torchaudio
+librosa
+numpy
+python_speech_features
+p_tqdm
+tqdm

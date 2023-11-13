@@ -4,8 +4,7 @@ from torch.utils.data import Dataset, DataLoader
 import os
 import random
 from glob import glob
-
-from p_tqdm import p_map
+from p_tqdm import p_map, p_tqdm
 
 from audio_utils import load_cleaned_audio, transform_audio, resize_random
 from configs import PLConfig, DSInfo
@@ -73,10 +72,12 @@ TEST_LIST = get_audio_list(DSInfo.TEST_DIR)
 
 
 def audio_f_to_input(p: str)->torch.Tensor:
+    if PLConfig.LOG:
+        print("Generating LogFBank features for file:", p)
     feat = get_features(p)
-    splits = []
     # split feat into segments of PLConfig.SEQ_LEN
-    
+    if PLConfig.LOG:
+        print("Splitting into segment of length:", PLConfig.SEQ_LEN)
     feat = resize_random(feat)
     feat = feat.unsqueeze(0)
     return feat
@@ -97,21 +98,14 @@ class SpeakerDataset(Dataset):
         label = self.ids[p.split('/')[3]]
         return feat, label
 
-
-def collate(data: list[torch.Tensor]):
-    return torch.cat(data, dim=0)
-
 trainloader = DataLoader(SpeakerDataset(TRAIN_LIST, TRAIN_IDS), batch_size=PLConfig.TRAIN_BATCH_SIZE, shuffle=False, num_workers=6)
 valloader = DataLoader(SpeakerDataset(VAL_LIST, TRAIN_IDS), batch_size=PLConfig.TRAIN_BATCH_SIZE*2, shuffle=False, num_workers=6)
 
+def save_features():
+    save_features(get_audio_dict(DSInfo.TRAIN_DIR))
+    save_features(get_audio_dict(DSInfo.TEST_DIR))
+
 if __name__ == '__main__':
     # Save features to disk
-    # save_features(get_audio_dict(DSInfo.TRAIN_DIR))
-    # save_features(get_audio_dict(DSInfo.TEST_DIR))
-
-    ts = SpeakerDataset(TRAIN_LIST, TRAIN_IDS)
-    for i in trainloader:
-        data, label = i
-        print(data.shape, label.shape)
-        break
+    save_features()
     

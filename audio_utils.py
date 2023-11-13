@@ -22,18 +22,9 @@ def load_cleaned_audio(path:str)->np.ndarray: # 1D ndarray
     return audio
 
 def transform_audio(audio)->torch.Tensor: # (n_mfcc, len)
-    # TODO check if librosa works better, because of different default values
-    # # Librosa: MFCC
-    # mel_spec = librosa.feature.mfcc(y=audio, sr=16000, n_mfcc=PLConfig.N_MFCC)
-    # mel_spec = torch.from_numpy(mel_spec)
-    # python_speech_features: LogFbank
     lfb = psf.logfbank(audio, nfilt=40).T
     lfb = torch.from_numpy(lfb).float()
     return lfb
-    # # Torchaudio: MFCC
-    # mel_spec = torchaudio.transforms.MFCC(n_mfcc=PLConfig.N_MFCC)(torch.from_numpy(audio))
-    # print(lfb.shape, mel_spec.shape, lfb.dtype, mel_spec.dtype)
-    # return mel_spec
 
 def resize_random(audio):
     if audio.shape[-1] <= PLConfig.SEQ_LEN:

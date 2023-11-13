@@ -1,10 +1,12 @@
 import torch
 import random
+
 from glob import glob
 from tqdm import tqdm
-from models import ResnetBBModel
-from data_utils import TEST_IDS, TEST_LIST, TRAIN_IDS, get_audio_dict, SpeakerDataset, audio_f_to_input, get_features
+
+from data_utils import TEST_IDS, TRAIN_IDS, get_audio_dict, SpeakerDataset, audio_f_to_input, get_features
 from configs import PLConfig, DSInfo
+from models import ResnetBBModel
 from resnet import resnet18 as resnet
 from audio_utils import resize_random
 
@@ -12,10 +14,15 @@ random.seed(1)
 
 NUM_SPEAKERS = len(TEST_IDS) # 40
 
-CKPT_PATH = 'tb_logs/ResnetBBModel/version_11/checkpoints/epoch=60-step=6100.ckpt'
+CKPT_PATH = 'tb_logs/ResnetBBModel/version_22/checkpoints/epoch=73-step=7400.ckpt'
 def load_model():
-    model = ResnetBBModel.load_from_checkpoint(checkpoint_path=CKPT_PATH, bb_module=resnet, embedding_size=128, num_classes=len(TRAIN_IDS))
-    return model.eval()
+    model = ResnetBBModel.load_from_checkpoint(checkpoint_path=CKPT_PATH, bb_module=resnet, embedding_size=PLConfig.EMBEDDING_SIZE, num_classes=len(TRAIN_IDS))
+    model = model.eval()
+    if PLConfig.USE_CUDA:
+        model = model.cuda()
+    else:
+        model = model.cpu()
+    return model
 
 model = load_model()
 
@@ -28,6 +35,8 @@ def get_anchors_paths():
     return paths
 
 def get_anchor_emb():
+    if PLConfig.LOG:
+        print("Generating embeddings for all anchors")
     paths = get_anchors_paths()
     feats = []
     labels = []
@@ -36,9 +45,15 @@ def get_anchor_emb():
         feats.append(audio_f_to_input(p))
     f = torch.stack(feats, dim=0)
     _, emb = model(f.to(model.device)) 
-    return emb.cpu(), labels # 40, 128
+    if PLConfig.USE_CUDA:
+        emb = emb.cuda()
+    else:
+        emb = emb.cpu()
+    return emb, labels # emb_size, 40
 
 def get_splits(p):
+    if PLConfig.LOG:
+        print("Generating all splits for file:", p)
     feat = get_features(p)
     splits = []
     n_splits = feat.shape[-1]//PLConfig.SEQ_LEN
@@ -54,17 +69,15 @@ def find_speaker_for_split(split, embs, labels):
     max_i = 0
     feat = split.unsqueeze(0).to(model.device)
 
-    # feat = torch.cat([feat for i in range(1)], dim=0)
     _, test_emb = model(feat)
-    test_emb = test_emb.cpu()
-    sims = []
-    for i, emb in enumerate(list(embs)):
-        sim = torch.cosine_similarity(test_emb, emb, dim=-1).item()
-        sims.append(sim)
-        if sim > max_sim:
-            max_sim = sim
-            max_i = i
-    return labels[max_i], max_sim, torch.Tensor(sims)
+    if PLConfig.USE_CUDA:
+        test_emb = test_emb.cuda()
+    else:
+        test_emb = test_emb.cpu()
+    sims = torch.nn.functional.softmax(torch.cosine_similarity(test_emb, embs, dim=-1), dim=-1)
+    max_i = torch.argmax(sims)
+    max_sim = sims[max_i]
+    return labels[max_i], max_sim, sims
 
 def find_speaker(test_path, embs, labels):
     splits = get_splits(test_path)
@@ -77,12 +90,11 @@ def find_speaker(test_path, embs, labels):
             scores = sims
         else:
             scores += sims
-    scores /= len(splits)
+    scores /= torch.sum(scores)
     max_sim = scores.max().item()
     max_i = scores.argmax().item()
     return labels[max_i], max_sim, scores
 
-test_path = './LibriSpeech/test-clean/1580/141084/1580-141084-0006.flac'
 def recognise_test(test_path, embs, labels):
     splits = get_splits(test_path)
     pred, score, all_scores = find_speaker(test_path, embs, labels)
@@ -91,7 +103,7 @@ def recognise_test(test_path, embs, labels):
     actual = test_path.split('/')[3]
     return pred, actual, score, all_scores
 
-if __name__ == '__main__':
+def calculate_n_shot_acc():
     embs, labels = get_anchor_emb()
     audio_paths = glob('./LibriSpeech/test-clean/*/*/*.flac')
     random.shuffle(audio_paths)
@@ -107,3 +119,15 @@ if __name__ == '__main__':
             n_correct += 1
         pbar.set_description("Acc: %s" % str(n_correct/(n_passed-skipped)))
     print("Accuracy:", n_correct/(len(audio_paths)-skipped), "Skipped:", skipped)
+
+if __name__ == '__main__':
+    # To calculate the overall n-shot accuracy, use this:
+    calculate_n_shot_acc()
+
+    # To detect speaker for a single file, use this:
+    test_path = './LibriSpeech/test-clean/672/122797/672-122797-0004.flac'
+    embs, labels = get_anchor_emb()
+    
+    pred, acc, _, _ = recognise_test(test_path, embs, labels)
+    print("Predicted Speaker:", pred, "\nActual Speaker:", acc)
+

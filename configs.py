@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 
 class PLConfig:
+    LOG = False
+    USE_CUDA = True
     SAMPLE_RATE = 16000
     DURATION = 3 # seconds
     SEQ_LEN = 100 # transformed feature len
@@ -13,6 +15,7 @@ class PLConfig:
     NUM_EPOCHS = 10
     LR = 0.1
     WD = 0.0001
+    EMBEDDING_SIZE = 256
 
     SILENCE_TOP_DB = 40
     N_MFCC = 40

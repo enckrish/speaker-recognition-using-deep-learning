@@ -12,21 +12,15 @@ class ResnetBBModel(L.LightningModule):
     def __init__(self, bb_module: models.ResNet, embedding_size: int, num_classes: int):
         super().__init__()
         self.backbone = bb_module(pretrained=False)
-        self.backbone.maxpool = nn.Identity()
-        self.backbone.avgpool = nn.Identity()
-        self.backbone.fc = nn.Identity()
 
         self.fc0 = nn.Linear(128, embedding_size)
         self.bn0 = nn.BatchNorm1d(embedding_size)
-        self.relu = nn.ReLU()
-
         self.drop = nn.Dropout(0.5)
-
         self.last = nn.Linear(embedding_size, num_classes)
+
         self.criterion = nn.CrossEntropyLoss()
 
     def forward(self, x):
-        # x = self.backbone(x)
         x = self.backbone.conv1(x)
         x = self.backbone.bn1(x)
         x = self.backbone.relu(x)
@@ -59,26 +53,27 @@ class ResnetBBModel(L.LightningModule):
     
     def training_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
         data, label = batch
-        out, emb = self(data)
-        # print("Train:", out.shape, label.shape)
+        out, _ = self(data)
         loss = self.criterion(out, label)
         self.log("training_loss", loss, prog_bar=True, on_epoch=True)
 
-        n_correct = (torch.max(out, 1)[1].long().view(label.size()) == label).sum().item()
-        n_total = data.size(0)
+        n_correct, n_total = ResnetBBModel.calculate_accuracy(data, out, label)
         self.log("training_acc", n_correct/n_total, prog_bar=True, on_epoch=True)
 
         return loss
 
     def validation_step(self, batch: Any, batch_idx: int) -> torch.Tensor:
         data, label = batch
-        out, emb = self(data)
-        # print("Val:", out.shape, label.shape)
+        out, _ = self(data)
         loss = self.criterion(out, label)
         self.log("val_loss", loss, prog_bar=True, on_epoch=True)
 
-        n_correct = (torch.max(out, 1)[1].long().view(label.size()) == label).sum().item()
-        n_total = data.size(0)
+        n_correct, n_total = ResnetBBModel.calculate_accuracy(data, out, label)
         self.log("val_acc", n_correct/n_total, prog_bar=True, on_epoch=True)
 
         return loss
+    
+    def calculate_accuracy(data, out, label):
+        n_correct = (torch.max(out, 1)[1].long().view(label.size()) == label).sum().item()
+        n_total = data.size(0)
+        return n_correct, n_total
