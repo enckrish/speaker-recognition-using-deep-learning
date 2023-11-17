@@ -3,8 +3,9 @@ import random
 
 from glob import glob
 from tqdm import tqdm
+import os
 
-from data_utils import TEST_IDS, TRAIN_IDS, get_audio_dict, SpeakerDataset, audio_f_to_input, get_features
+from data_utils import TEST_IDS, TRAIN_IDS, get_audio_dict, audio_f_to_input, get_features
 from configs import PLConfig, DSInfo
 from models import ResnetBBModel
 from resnet import resnet18 as resnet
@@ -14,7 +15,7 @@ random.seed(1)
 
 NUM_SPEAKERS = len(TEST_IDS) # 40
 
-CKPT_PATH = 'tb_logs/ResnetBBModel/version_22/checkpoints/epoch=73-step=7400.ckpt'
+CKPT_PATH = 'tb_logs/ResnetBBModel/version_3/checkpoints/epoch=54-step=5500.ckpt'
 def load_model():
     model = ResnetBBModel.load_from_checkpoint(checkpoint_path=CKPT_PATH, bb_module=resnet, embedding_size=PLConfig.EMBEDDING_SIZE, num_classes=len(TRAIN_IDS))
     model = model.eval()

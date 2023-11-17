@@ -5,22 +5,16 @@ class PLConfig:
     LOG = False
     USE_CUDA = True
     SAMPLE_RATE = 16000
-    DURATION = 3 # seconds
     SEQ_LEN = 100 # transformed feature len
     VAL_SPLIT = 30
 
     FEAT_PATH = Path('./feats')
     TRAIN_BATCH_SIZE = 64
-    TEST_BATCH_SIZE = 111
-    NUM_EPOCHS = 10
     LR = 0.1
     WD = 0.0001
-    EMBEDDING_SIZE = 256
+    EMBEDDING_SIZE = 512
 
     SILENCE_TOP_DB = 40
-    N_MFCC = 40
-
-    TRIPLET_ALPHA = 0.1
 
 class DSInfo:
     DATA_DIR = './LibriSpeech'
