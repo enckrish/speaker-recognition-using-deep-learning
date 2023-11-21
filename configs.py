@@ -15,6 +15,7 @@ class PLConfig:
     EMBEDDING_SIZE = 512
 
     SILENCE_TOP_DB = 40
+    CKPT_PATH = 'tb_logs/ResnetBBModel/version_11/checkpoints/epoch=60-step=6100.ckpt'
 
 class DSInfo:
     DATA_DIR = './LibriSpeech'

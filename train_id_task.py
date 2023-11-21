@@ -7,9 +7,8 @@ from resnet import resnet18 as resnet
 
 trainset = SpeakerDataset(TRAIN_LIST, TRAIN_IDS)
 
-CKPT_PATH = 'tb_logs/ResnetBBModel/version_11/checkpoints/epoch=60-step=6100.ckpt'
 def load_model():
-    model = ResnetBBModel.load_from_checkpoint(checkpoint_path=CKPT_PATH, bb_module=resnet, embedding_size=PLConfig.EMBEDDING_SIZE, num_classes=len(TRAIN_IDS))
+    model = ResnetBBModel.load_from_checkpoint(checkpoint_path=PLConfig.CKPT_PATH, bb_module=resnet, embedding_size=PLConfig.EMBEDDING_SIZE, num_classes=len(TRAIN_IDS))
     model = model.eval()
     if PLConfig.USE_CUDA:
         model = model.cuda()
