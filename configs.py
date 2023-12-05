@@ -12,9 +12,10 @@ class PLConfig:
     TRAIN_BATCH_SIZE = 64
     LR = 0.1
     WD = 0.0001
-    EMBEDDING_SIZE = 512
+    EMBEDDING_SIZE = 256
 
     SILENCE_TOP_DB = 40
+    CKPT_PATH = 'tb_logs/ResnetBBModel/version_2/checkpoints/epoch=75-step=7600.ckpt'
 
 class DSInfo:
     DATA_DIR = './LibriSpeech'

@@ -101,11 +101,11 @@ class SpeakerDataset(Dataset):
 trainloader = DataLoader(SpeakerDataset(TRAIN_LIST, TRAIN_IDS), batch_size=PLConfig.TRAIN_BATCH_SIZE, shuffle=False, num_workers=6)
 valloader = DataLoader(SpeakerDataset(VAL_LIST, TRAIN_IDS), batch_size=PLConfig.TRAIN_BATCH_SIZE*2, shuffle=False, num_workers=6)
 
-def save_features():
+def save_features_all():
     save_features(get_audio_dict(DSInfo.TRAIN_DIR))
     save_features(get_audio_dict(DSInfo.TEST_DIR))
 
 if __name__ == '__main__':
     # Save features to disk
-    save_features()
+    save_features_all()
     
